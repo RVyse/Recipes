@@ -1,0 +1,194 @@
+﻿@page "/recipes"
+@using System.Globalization
+@using CsvHelper
+@using CsvHelper.Configuration
+@using RecipieApp.Shared.Domains
+@using RecipieApp.Shared.Enums
+@inject HttpClient Http
+
+<div class="container my-4">
+    <h2 class="mb-3">Recipes</h2>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-md-4">
+                    <label class="form-label">Search</label>
+                    <input class="form-control" placeholder="Search title, description, ingredients..." @bind="searchTerm" />
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label">Category</label>
+                    <select class="form-select" @bind="selectedCategory">
+                        <option value="All">All</option>
+                        @foreach (var cat in Enum.GetValues<FoodCategory>())
+                        {
+                            <option value="@cat">@cat</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label">Min prep (min)</label>
+                    <input type="number" class="form-control" @bind="minPrep" />
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label">Tag</label>
+                    <input class="form-control" placeholder="e.g. vegetarian" @bind="tagFilter" />
+                </div>
+                <div class="col-6 col-md-2 d-grid">
+                    <button class="btn btn-secondary mt-1" @onclick="ClearFilters">Clear</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-2 text-muted">@FilteredRecipes.Count() recipes found</div>
+
+    <div class="row">
+        @if (FilteredRecipes.Any())
+        {
+            @foreach (var recipe in FilteredRecipes)
+            {
+                <div class="col-12 col-md-6 col-lg-4 mb-3" @key="recipe.Title">
+                    <div class="card h-100">
+                        <img src="@GetImagePath(recipe.ImageUrl)" class="card-img-top" style="object-fit:cover; height:180px;" alt="@recipe.Title" />
+                        <div class="card-body d-flex flex-column">
+                            <h5 class="card-title">@recipe.Title</h5>
+                            <h6 class="card-subtitle mb-2 text-muted">@recipe.FoodCategory - @recipe.Servings serving(s) - @recipe.TotalTimeMinutes min</h6>
+                            <p class="card-text">@Shorten(recipe.Description, 140)</p>
+                            <div class="mt-auto">
+                                <button class="btn btn-link p-0" @onclick="() => ShowRecipe(recipe)">View details</button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="col-12">
+                <div class="alert alert-info">No recipes match your filters.</div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<Recipe> recipes = new();
+    private string searchTerm = string.Empty;
+    private string selectedCategory { get; set; } = "All";
+    private int? minPrep { get; set; }
+    private string tagFilter { get; set; } = string.Empty;
+    private HashSet<string> expandedTitles = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Ensure the CSV is placed in wwwroot/data/recipies_data.csv
+            var csv = await Http.GetStringAsync("data/recipies_data.csv");
+            ParseCsvWithCsvHelper(csv);
+        }
+        catch (Exception)
+        {
+            // swallow for now; in a real app log this
+            recipes = new List<Recipe>();
+        }
+    }
+
+    private void ParseCsvWithCsvHelper(string csv)
+    {
+        using var reader = new System.IO.StringReader(csv);
+        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            HasHeaderRecord = true,
+            IgnoreBlankLines = true,
+            BadDataFound = null
+        };
+
+        using var csvr = new CsvReader(reader, config);
+        csvr.Context.RegisterClassMap<RecipeMap>();
+        try
+        {
+            var records = csvr.GetRecords<Recipe>().ToList();
+            recipes = records;
+        }
+        catch
+        {
+            recipes = new List<Recipe>();
+        }
+    }
+
+    private IEnumerable<Recipe> FilteredRecipes => recipes.Where(r =>
+        (string.IsNullOrWhiteSpace(searchTerm) || MatchesSearch(r, searchTerm))
+        && (selectedCategory == "All" || (Enum.TryParse<FoodCategory>(selectedCategory, out var sc) && r.FoodCategory == sc))
+        && (!minPrep.HasValue || r.PrepTimeMinutes >= minPrep.Value)
+        && (string.IsNullOrWhiteSpace(tagFilter) || (!string.IsNullOrWhiteSpace(r.Tags) && r.Tags.IndexOf(tagFilter, StringComparison.OrdinalIgnoreCase) >= 0))
+    ).ToList();
+
+    private bool MatchesSearch(Recipe r, string term)
+    {
+        term = term?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(term)) return true;
+        return (r.Title?.Contains(term, StringComparison.OrdinalIgnoreCase) == true)
+            || (r.Description?.Contains(term, StringComparison.OrdinalIgnoreCase) == true)
+            || (r.Ingredients?.Contains(term, StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    private string GetImagePath(string imageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imageUrl)) return "images/placeholder.png";
+        // If user provided a full path (starting with http) return it as-is; otherwise assume in wwwroot
+        if (imageUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return imageUrl;
+        return imageUrl.StartsWith("/") ? imageUrl : imageUrl;
+    }
+
+    private void ToggleDetails(Recipe recipe)
+    {
+        if (expandedTitles.Contains(recipe.Title)) expandedTitles.Remove(recipe.Title);
+        else expandedTitles.Add(recipe.Title);
+    }
+
+    private bool IsExpanded(Recipe recipe) => expandedTitles.Contains(recipe.Title);
+
+    private void ClearFilters()
+    {
+        searchTerm = string.Empty;
+        selectedCategory = "All";
+        minPrep = null;
+        tagFilter = string.Empty;
+    }
+
+    private string Shorten(string text, int max)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        return text.Length <= max ? text : text.Substring(0, max).TrimEnd() + "...";
+    }
+
+    private MarkupString FormatAsHtml(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return new MarkupString(string.Empty);
+        // Simple newline -> <br/> conversion, ingredients/instructions often contain line breaks
+        var encoded = System.Net.WebUtility.HtmlEncode(text).Replace("\n", "<br />").Replace("\r", "");
+        return new MarkupString(encoded);
+    }
+
+    // CsvHelper mapping to handle column name differences (e.g. PrepTime -> PrepTimeMinutes)
+    private sealed class RecipeMap : ClassMap<Recipe>
+    {
+        public RecipeMap()
+        {
+            Map(m => m.Title).Name("Title");
+            Map(m => m.Description).Name("Description");
+            Map(m => m.Ingredients).Name("Ingredients");
+            Map(m => m.Instructions).Name("Instructions");
+            Map(m => m.ImageUrl).Name("ImageUrl");
+            Map(m => m.Tags).Name("Tags");
+            Map(m => m.Variations).Name("Variation", "Variations");
+            Map(m => m.PrepTimeMinutes).Name("PrepTime", "PrepTimeMinutes");
+            Map(m => m.CookTimeMinutes).Name("CookTime", "CookTimeMinutes");
+            Map(m => m.Servings).Name("Servings");
+            Map(m => m.FoodCategory).Name("FoodCategory");
+        }
+    }
+}
