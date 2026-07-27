@@ -1,5 +1,77 @@
-﻿<h3>RecipeItem</h3>
+﻿@using RecipieApp.Shared.Domains
+@using RecipieApp.Shared.Enums
+@using Microsoft.AspNetCore.Components
+
+<div class="card">
+    <div class="card-body">
+        <button class="btn btn-link mb-2 p-0" @onclick="Back">&larr; Back to list</button>
+        <div class="row">
+            <div class="col-12 col-md-4">
+                @if (string.IsNullOrWhiteSpace(Recipe?.ImageUrl))
+                {
+                    <div class="placeholder-image rounded">
+                        <div class="placeholder-inner">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" class="mb-1" aria-hidden="true"><rect x="3" y="3" width="18" height="14" rx="2"></rect><path d="M3 17a2 2 0 0 0 2 2h14"></path></svg>
+                            <div class="fw-bold placeholder-initials">@GetInitials(Recipe?.Title)</div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <img src="@GetImagePath(Recipe?.ImageUrl)" class="img-fluid rounded" alt="@Recipe?.Title" />
+                }
+            </div>
+            <div class="col-12 col-md-8">
+                <h2>@Recipe?.Title</h2>
+                <h6 class="text-muted">@Recipe?.FoodCategory - @Recipe?.Servings serving(s) - @Recipe?.TotalTimeMinutes min</h6>
+                <p>@Recipe?.Description</p>
+                <hr />
+                <strong>Ingredients</strong>
+                <p>@(FormatAsHtml(Recipe?.Ingredients ?? string.Empty))</p>
+                <strong>Instructions</strong>
+                <p>@(FormatAsHtml(Recipe?.Instructions ?? string.Empty))</p>
+                @if (!string.IsNullOrWhiteSpace(Recipe?.Tags))
+                {
+                    <div><small class="text-muted">Tags: @Recipe?.Tags</small></div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
 
 @code {
+    [Parameter]
+    public Recipe? Recipe { get; set; }
 
+    [Parameter]
+    public EventCallback OnBack { get; set; }
+
+    private Task Back()
+    {
+        return OnBack.InvokeAsync(null);
+    }
+
+    private string GetImagePath(string? imageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imageUrl)) return "images/placeholder.png";
+        if (imageUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return imageUrl;
+        return imageUrl.StartsWith("/") ? imageUrl : imageUrl;
+    }
+
+    private string GetInitials(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "R";
+        var parts = title.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0].Substring(0, Math.Min(2, parts[0].Length)).ToUpperInvariant();
+        var first = parts[0][0];
+        var second = parts[1][0];
+        return new string(new[] { char.ToUpperInvariant(first), char.ToUpperInvariant(second) });
+    }
+
+    private MarkupString FormatAsHtml(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return new MarkupString(string.Empty);
+        var encoded = System.Net.WebUtility.HtmlEncode(text).Replace("\n", "<br />").Replace("\r", "");
+        return new MarkupString(encoded);
+    }
 }

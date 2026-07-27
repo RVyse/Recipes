@@ -1,65 +1,122 @@
-﻿@page "/recipes"
+﻿@page "/"
+@page "/recipes"
 @using System.Globalization
 @using CsvHelper
 @using CsvHelper.Configuration
 @using RecipieApp.Shared.Domains
+@using Microsoft.AspNetCore.Components.Web
 @using RecipieApp.Shared.Enums
 @inject HttpClient Http
 
 <div class="container my-4">
-    <h2 class="mb-3">Recipes</h2>
+    @if (selectedRecipe != null)
+    {
+        <RecipeItem Recipe="selectedRecipe" OnBack="BackToList" />
+    }
+    else
+    {
+        @((MarkupString)PageStyles)
+            <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+                <h2 class="mb-0 header-title">Recipes</h2>
+                <div class="text-muted small">Discover and filter delicious recipes</div>
+            </div>
+            <div class="text-end">
+                <button class="btn btn-outline-primary" @onclick="ResetFilters">Reset</button>
+            </div>
+        </div>
 
-    <div class="card mb-3">
-        <div class="card-body">
-            <div class="row g-2 align-items-end">
-                <div class="col-12 col-md-4">
-                    <label class="form-label">Search</label>
-                    <input class="form-control" placeholder="Search title, description, ingredients..." @bind="searchTerm" />
-                </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label">Category</label>
-                    <select class="form-select" @bind="selectedCategory">
-                        <option value="All">All</option>
-                        @foreach (var cat in Enum.GetValues<FoodCategory>())
-                        {
-                            <option value="@cat">@cat</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label">Min prep (min)</label>
-                    <input type="number" class="form-control" @bind="minPrep" />
-                </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label">Tag</label>
-                    <input class="form-control" placeholder="e.g. vegetarian" @bind="tagFilter" />
-                </div>
-                <div class="col-6 col-md-2 d-grid">
-                    <button class="btn btn-secondary mt-1" @onclick="ClearFilters">Clear</button>
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-2 align-items-center">
+                    <div class="col-12 col-md-5">
+                        <label class="form-label visually-hidden">Search</label>
+                        <div class="input-group search-input">
+                            <span class="input-group-text bg-white border-end-0">
+                                <!-- simple search icon -->
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="bi bi-search" aria-hidden="true" focusable="false" width="18" height="18"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            </span>
+                            <input class="form-control border-start-0" placeholder="Search title, description, ingredients..." @bind="searchTerm" />
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label visually-hidden">Category</label>
+                        <select class="form-select" @bind="selectedCategory">
+                            <option value="All">All</option>
+                            @foreach (var cat in Enum.GetValues<FoodCategory>())
+                            {
+                                <option value="@cat">@cat</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label visually-hidden">Min prep</label>
+                        <input type="number" class="form-control" placeholder="Min prep" @bind="minPrep" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label visually-hidden">Tag</label>
+                        <input class="form-control" placeholder="e.g. vegetarian" @bind="tagFilter" />
+                    </div>
+                    <div class="col-6 col-md-1 d-grid">
+                        <button class="btn btn-primary" @onclick="ClearFilters">Apply</button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
     <div class="mb-2 text-muted">@FilteredRecipes.Count() recipes found</div>
+    @if (!string.IsNullOrWhiteSpace(parseError))
+    {
+        <div class="alert alert-danger">CSV parse error: @parseError</div>
+    }
 
     <div class="row">
         @if (FilteredRecipes.Any())
         {
             @foreach (var recipe in FilteredRecipes)
             {
-                <div class="col-12 col-md-6 col-lg-4 mb-3" @key="recipe.Title">
-                    <div class="card h-100">
-                        <img src="@GetImagePath(recipe.ImageUrl)" class="card-img-top" style="object-fit:cover; height:180px;" alt="@recipe.Title" />
+                <div class="col-12 col-sm-6 col-lg-4 mb-4" @key="recipe.Title">
+                    <div class="card recipe-card h-100 clickable" role="button" tabindex="0" @onclick="() => ShowRecipe(recipe)" @onkeydown="(e) => OnCardKeyDown(e, recipe)">
+                        <div class="position-relative">
+                            @if (string.IsNullOrWhiteSpace(recipe.ImageUrl))
+                            {
+                                <div class="placeholder-image">
+                                    <div class="placeholder-inner d-flex flex-column align-items-center justify-content-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" class="mb-1" aria-hidden="true"><rect x="3" y="3" width="18" height="14" rx="2"></rect><path d="M3 17a2 2 0 0 0 2 2h14"></path></svg>
+                                        <div class="fw-bold placeholder-initials">@GetInitials(recipe.Title)</div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <img src="@GetImagePath(recipe.ImageUrl)" class="recipe-img" alt="@recipe.Title" />
+                            }
+                            <span class="badge bg-primary position-absolute" style="right:12px; top:12px; opacity:0.95">@recipe.FoodCategory</span>
+                        </div>
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title">@recipe.Title</h5>
-                            <h6 class="card-subtitle mb-2 text-muted">@recipe.FoodCategory - @recipe.Servings serving(s) - @recipe.TotalTimeMinutes min</h6>
-                            <p class="card-text">@Shorten(recipe.Description, 140)</p>
-                            <div class="mt-auto">
-                                <button class="btn btn-link p-0" @onclick="() => ShowRecipe(recipe)">View details</button>
+                            <h5 class="card-title mb-1">@recipe.Title</h5>
+                            <div class="mb-2 text-muted small">@Shorten(recipe.Description, 100)</div>
+
+                            <div class="mb-3">
+                                <span class="badge bg-light text-dark me-2">⏱ @((recipe.TotalTimeMinutes)) min</span>
+                                <span class="badge bg-light text-dark">🍽 @((recipe.Servings ?? 0))</span>
+                            </div>
+
+                            <div class="mt-auto d-flex justify-content-between align-items-center">
+                                <div>
+                                    @if (!string.IsNullOrWhiteSpace(recipe.Tags))
+                                    {
+                                        @foreach (var t in (recipe.Tags ?? string.Empty).Split(new[] {',',';'}, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()))
+                                        {
+                                            <span class="badge bg-secondary me-1">@t</span>
+                                        }
+                                    }
+                                </div>
+                                <div>
+                                    <!-- card clickable — button removed to allow whole card click -->
+                                </div>
                             </div>
                         </div>
-
                     </div>
                 </div>
             }
@@ -71,10 +128,13 @@
             </div>
         }
     </div>
-</div>
+    }
+
+    </div>
 
 @code {
     private List<Recipe> recipes = new();
+    private Recipe? selectedRecipe;
     private string searchTerm = string.Empty;
     private string selectedCategory { get; set; } = "All";
     private int? minPrep { get; set; }
@@ -103,7 +163,9 @@
         {
             HasHeaderRecord = true,
             IgnoreBlankLines = true,
-            BadDataFound = null
+            BadDataFound = null,
+            MissingFieldFound = null,
+            HeaderValidated = null
         };
 
         using var csvr = new CsvReader(reader, config);
@@ -112,9 +174,13 @@
         {
             var records = csvr.GetRecords<Recipe>().ToList();
             recipes = records;
+            parseError = null;
         }
-        catch
+        catch (Exception ex)
         {
+            // keep the exception message for debugging and show an empty list
+            parseError = ex.ToString();
+            Console.WriteLine(ex);
             recipes = new List<Recipe>();
         }
     }
@@ -140,7 +206,7 @@
         if (string.IsNullOrWhiteSpace(imageUrl)) return "images/placeholder.png";
         // If user provided a full path (starting with http) return it as-is; otherwise assume in wwwroot
         if (imageUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return imageUrl;
-        return imageUrl.StartsWith("/") ? imageUrl : imageUrl;
+        return imageUrl;
     }
 
     private void ToggleDetails(Recipe recipe)
@@ -149,7 +215,45 @@
         else expandedTitles.Add(recipe.Title);
     }
 
+    private void ShowRecipe(Recipe recipe)
+    {
+        selectedRecipe = recipe;
+    }
+
+    private void BackToList()
+    {
+        selectedRecipe = null;
+    }
+
+    private void ResetFilters()
+    {
+        searchTerm = string.Empty;
+        selectedCategory = "All";
+        minPrep = null;
+        tagFilter = string.Empty;
+    }
+
+    private string GetInitials(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "R";
+        var parts = title.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0].Substring(0, Math.Min(2, parts[0].Length)).ToUpperInvariant();
+        var first = parts[0][0];
+        var second = parts[1][0];
+        return new string(new[] { char.ToUpperInvariant(first), char.ToUpperInvariant(second) });
+    }
+
+    private void OnCardKeyDown(KeyboardEventArgs e, Recipe recipe)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            ShowRecipe(recipe);
+        }
+    }
+
     private bool IsExpanded(Recipe recipe) => expandedTitles.Contains(recipe.Title);
+
+    private string? parseError;
 
     private void ClearFilters()
     {
@@ -173,6 +277,24 @@
         return new MarkupString(encoded);
     }
 
+    // Simple page styles to give a modern, clean look
+    /* CSS intentionally scoped to this page */
+    private const string PageStyles = @"
+    <style>
+    .recipe-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap:1rem; }
+    .recipe-card { transition: transform .18s ease, box-shadow .18s ease; border-radius:.5rem; overflow:hidden; }
+    .recipe-card:hover { transform: translateY(-6px); box-shadow:0 12px 30px rgba(0,0,0,.12); }
+    .recipe-card.clickable { cursor:pointer; }
+    .recipe-card.clickable:focus { outline:3px solid rgba(13,110,253,.15); outline-offset:4px; }
+    .recipe-img { width:100%; height:180px; object-fit:cover; display:block; }
+    .placeholder-image { width:100%; height:180px; display:flex; align-items:center; justify-content:center; background:linear-gradient(180deg,#e9ecef,#dee2e6); color:#6c757d; }
+    .placeholder-inner { text-align:center; }
+    .placeholder-initials { font-size:1rem; color:#495057; }
+    .header-title { font-weight:700; letter-spacing:.2px; }
+    .search-input .input-group-text { border-right:0; }
+    .search-input .form-control { border-left:0; }
+    </style>";
+
     // CsvHelper mapping to handle column name differences (e.g. PrepTime -> PrepTimeMinutes)
     private sealed class RecipeMap : ClassMap<Recipe>
     {
@@ -185,10 +307,71 @@
             Map(m => m.ImageUrl).Name("ImageUrl");
             Map(m => m.Tags).Name("Tags");
             Map(m => m.Variations).Name("Variation", "Variations");
-            Map(m => m.PrepTimeMinutes).Name("PrepTime", "PrepTimeMinutes");
-            Map(m => m.CookTimeMinutes).Name("CookTime", "CookTimeMinutes");
-            Map(m => m.Servings).Name("Servings");
-            Map(m => m.FoodCategory).Name("FoodCategory");
+            Map(m => m.PrepTimeMinutes).Convert(args =>
+            {
+                var row = args.Row;
+                string val = string.Empty;
+                try { val = row.GetField("PrepTimeMinutes"); } catch { }
+                if (string.IsNullOrWhiteSpace(val)) { try { val = row.GetField("PrepTime"); } catch { } }
+                if (string.IsNullOrWhiteSpace(val)) return null;
+                var m = System.Text.RegularExpressions.Regex.Match(val, "\\d+");
+                return m.Success ? int.Parse(m.Value) : (int?)null;
+            });
+            Map(m => m.CookTimeMinutes).Convert(args =>
+            {
+                var row = args.Row;
+                string val = string.Empty;
+                try { val = row.GetField("CookTimeMinutes"); } catch { }
+                if (string.IsNullOrWhiteSpace(val)) { try { val = row.GetField("CookTime"); } catch { } }
+                if (string.IsNullOrWhiteSpace(val)) return null;
+                var m = System.Text.RegularExpressions.Regex.Match(val, "\\d+");
+                return m.Success ? int.Parse(m.Value) : (int?)null;
+            });
+            Map(m => m.Servings).Convert(args =>
+            {
+                var row = args.Row;
+                string val = string.Empty;
+                try { val = row.GetField("Servings"); } catch { }
+                if (string.IsNullOrWhiteSpace(val)) return null;
+                var m = System.Text.RegularExpressions.Regex.Match(val, "\\d+");
+                return m.Success ? int.Parse(m.Value) : (int?)null;
+            });
+            // Custom mapping for FoodCategory to handle values like "Main", "MainCourse", "Starters"
+            Map(m => m.FoodCategory).Convert(args =>
+            {
+                var row = args.Row;
+                string val = string.Empty;
+                try
+                {
+                    val = row.GetField("FoodCategory");
+                }
+                catch { }
+                if (string.IsNullOrWhiteSpace(val))
+                {
+                    try { val = row.GetField("FootCategory"); } catch { }
+                }
+
+                if (string.IsNullOrWhiteSpace(val)) return FoodCategory.Starter;
+
+                // Normalize common variants
+                var normalized = val.Trim();
+                if (string.Equals(normalized, "Main", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(normalized, "MainCourse", StringComparison.OrdinalIgnoreCase))
+                    return FoodCategory.MainCourse;
+                if (string.Equals(normalized, "Starter", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(normalized, "Starters", StringComparison.OrdinalIgnoreCase))
+                    return FoodCategory.Starter;
+                if (string.Equals(normalized, "Dessert", StringComparison.OrdinalIgnoreCase))
+                    return FoodCategory.Dessert;
+                if (string.Equals(normalized, "Beverage", StringComparison.OrdinalIgnoreCase))
+                    return FoodCategory.Beverage;
+                if (string.Equals(normalized, "Snack", StringComparison.OrdinalIgnoreCase))
+                    return FoodCategory.Snack;
+
+                // Fallback to Enum.TryParse
+                if (Enum.TryParse<FoodCategory>(normalized, true, out var parsed)) return parsed;
+                return FoodCategory.Starter;
+            });
         }
     }
 }
