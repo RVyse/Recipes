@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="RecipesSite/RecipesSite.Client/RecipesSite.Client.csproj" />
+  <Project Path="RecipesSite/RecipesSite/RecipesSite.csproj" />
+</Solution>
