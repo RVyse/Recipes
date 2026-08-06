@@ -1,0 +1,238 @@
+@page "/medical/settings"
+@using RecipieApp.Shared.Domains.MedApp
+@inject MedAppStateService State
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0">Configuration</h3>
+            <div class="text-muted">Manage medicines, sites and schedules</div>
+        </div>
+        <div>
+            <a class="btn btn-outline-secondary" href="/medical/home">Back to dashboard</a>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12 col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Medicines</h5>
+                    <ul class="list-group mb-3">
+                        @foreach (var m in medicines)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-semibold">@m.Name</div>
+                                    @if (m.IsInjection) { <div class="small text-muted">Injection</div> }
+                                </div>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => SelectMedicine(m)">Edit</button>
+                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteMedicine(m)">Delete</button>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+
+                    <div>
+                        <label class="form-label">Add medicine</label>
+                        <div class="input-group mb-2">
+                            <input class="form-control" @bind="newMedicineName" placeholder="Medicine name" />
+                            <button class="btn btn-primary" @onclick="AddMedicine">Add</button>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="isInjection2" @bind="newIsInjection" />
+                            <label class="form-check-label" for="isInjection2">Is Injection</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    @if (selected == null)
+                    {
+                        <div class="text-muted">Select a medicine to edit its injection sites and schedules.</div>
+                    }
+                    else
+                    {
+                        <h5 class="mb-3">Editing: @selected.Name</h5>
+                        <div class="row">
+                            <div class="col-12 col-md-6">
+                                <h6>Injection sites</h6>
+                                <InjectionSiteEditor Medicine="selected" OnChanged="OnMedicineChanged" />
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <h6>Schedules</h6>
+                                <ScheduleEditor Medicine="selected" OnScheduleSaved="OnScheduleSaved" />
+
+                                <div class="mt-3">
+                                    <h6 class="small text-muted">Existing schedules</h6>
+                                    <ul class="list-group">
+                                        @foreach (var s in schedulesForSelected)
+                                        {
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <div class="fw-semibold">Starts: @s.StartDate.ToString()</div>
+                                                    <div class="small text-muted">@string.Join(", ", s.WeekDays)</div>
+                                                </div>
+                                                <div>
+                                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteSchedule(s.Id)">Delete</button>
+                                                </div>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="card shadow-sm mt-3">
+                <div class="card-body">
+                    <h5 class="card-title">Retention & Generation</h5>
+                    <div class="mb-2">
+                        <label>Retention days (keep recorded entries)</label>
+                        <input type="number" class="form-control" @bind="retentionDays" />
+                    </div>
+                    <div class="mb-2">
+                        <label>Generate days (how many days forward to simulate)</label>
+                        <input type="number" class="form-control" @bind="generateDays" />
+                    </div>
+                    <div class="d-flex">
+                        <button class="btn btn-secondary me-2" @onclick="SaveRetention">Save retention</button>
+                        <button class="btn btn-secondary me-2" @onclick="SaveGenerate">Save generate</button>
+                        <button class="btn btn-primary me-2" @onclick="GenerateNow">Generate Now</button>
+                        <button class="btn btn-danger" @onclick="Purge">Purge Now</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mt-3">
+                <div class="card-body">
+                    <h5 class="card-title">Export / Import</h5>
+                    <div class="d-flex mb-2">
+                        <button class="btn btn-outline-primary me-2" @onclick="Export">Export JSON</button>
+                        <button class="btn btn-outline-secondary" @onclick="() => importJson = string.Empty">Clear</button>
+                    </div>
+                    <textarea class="form-control" rows="6" @bind="importJson"></textarea>
+                    <div class="mt-2">
+                        <button class="btn btn-outline-success" @onclick="Import">Import</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Medicine> medicines = new();
+    private Medicine? selected;
+    private List<Schedule> schedulesForSelected = new();
+
+    private int retentionDays = 365;
+    private int generateDays = 30;
+    private string importJson = string.Empty;
+    private string newMedicineName = string.Empty;
+    private bool newIsInjection = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await State.InitializeAsync();
+        medicines = State.Medicines.ToList();
+        // read settings
+        var raw = await State.ExportStateAsync();
+        if (!string.IsNullOrEmpty(raw))
+        {
+            try
+            {
+                var doc = System.Text.Json.JsonDocument.Parse(raw);
+                if (doc.RootElement.TryGetProperty("Settings", out var s))
+                {
+                    if (s.TryGetProperty("RetentionDays", out var r)) retentionDays = r.GetInt32();
+                    if (s.TryGetProperty("GenerateDays", out var g)) generateDays = g.GetInt32();
+                }
+            }
+            catch { }
+        }
+    }
+
+    private async Task AddMedicine()
+    {
+        if (string.IsNullOrWhiteSpace(newMedicineName)) return;
+        var med = new Medicine { Name = newMedicineName.Trim(), IsInjection = newIsInjection };
+        await State.AddMedicineAsync(med);
+        medicines = State.Medicines.ToList();
+        newMedicineName = string.Empty;
+        newIsInjection = false;
+    }
+
+    private void SelectMedicine(Medicine m)
+    {
+        selected = m;
+        schedulesForSelected = State.GetSchedulesForMedicine(m.Id).ToList();
+    }
+
+    private async Task DeleteMedicine(Medicine m)
+    {
+        await State.RemoveMedicineAsync(m.Id);
+        medicines = State.Medicines.ToList();
+        if (selected?.Id == m.Id) selected = null;
+    }
+
+    private async Task OnMedicineChanged(Medicine m)
+    {
+        await State.UpdateMedicineAsync(m);
+        medicines = State.Medicines.ToList();
+    }
+
+    private async Task OnScheduleSaved(Schedule s)
+    {
+        await State.AddScheduleAsync(s);
+        schedulesForSelected = State.GetSchedulesForMedicine(s.MedicineId).ToList();
+    }
+
+    private async Task DeleteSchedule(Guid id)
+    {
+        await State.RemoveScheduleAsync(id);
+        if (selected != null) schedulesForSelected = State.GetSchedulesForMedicine(selected.Id).ToList();
+    }
+
+    private async Task SaveRetention()
+    {
+        await State.SetRetentionDaysAsync(retentionDays);
+    }
+
+    private async Task Purge()
+    {
+        await State.PurgeOldRecordsAsync();
+    }
+
+    private async Task SaveGenerate()
+    {
+        await State.SetGenerateDaysAsync(generateDays);
+    }
+
+    private async Task GenerateNow()
+    {
+        await State.GenerateForwardForAllAsync();
+    }
+
+    private async Task Export()
+    {
+        var raw = await State.ExportStateAsync();
+        importJson = raw;
+    }
+
+    private async Task Import()
+    {
+        if (string.IsNullOrWhiteSpace(importJson)) return;
+        await State.ImportStateAsync(importJson);
+        // refresh
+        medicines = State.Medicines.ToList();
+        selected = null;
+    }
+}

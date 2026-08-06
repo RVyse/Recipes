@@ -1,0 +1,94 @@
+@using RecipieApp.Shared.Domains.MedApp
+@inject MedAppStateService State
+
+@* Parameters *@
+@code {
+    [Parameter] public Medicine? Medicine { get; set; }
+    [Parameter] public EventCallback<Schedule> OnScheduleSaved { get; set; }
+
+    // expose reference to parent so they can read current constructed schedule
+    public Schedule? BuildSchedule()
+    {
+        if (Medicine == null) return null;
+        if (weekDays == null || !weekDays.Any()) return null;
+        if (!DateOnly.TryParse(startDateString, out var start)) start = DateOnly.FromDateTime(DateTime.Today);
+        return new Schedule { MedicineId = Medicine.Id, StartDate = start, WeekDays = weekDays.ToList() };
+    }
+}
+
+@if (Medicine == null)
+{
+    <div class="alert alert-secondary">Select a medicine to create or edit schedules.</div>
+}
+else
+{
+    <div>
+        <h5>Schedules for @Medicine.Name</h5>
+        <div class="mb-2">
+            <label>Start date</label>
+            <input type="date" class="form-control" value="@startDateString" @onchange="OnStartDateChanged" />
+        </div>
+        <div class="mb-2">
+            <label>Weekdays</label>
+            <div class="d-flex flex-wrap">
+                @foreach (DayOfWeek dow in Enum.GetValues(typeof(DayOfWeek)))
+                {
+                    <div class="form-check me-2">
+                        <input class="form-check-input" type="checkbox" id="dow_@dow" checked="@weekDays.Contains(dow)" @onchange="(e)=>ToggleDay(dow, e)" />
+                        <label class="form-check-label" for="dow_@dow">@dow</label>
+                    </div>
+                }
+            </div>
+        </div>
+        <button class="btn btn-primary" @onclick="Save">Save Schedule</button>
+    </div>
+}
+
+@code {
+    private string startDateString = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+    private HashSet<DayOfWeek> weekDays = new();
+
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+        // populate defaults when medicine changes
+        startDateString = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+        weekDays = new HashSet<DayOfWeek>();
+        if (Medicine != null)
+        {
+            // load existing schedule if present
+            var sched = State.GetSchedulesForMedicine(Medicine.Id).FirstOrDefault();
+            if (sched != null)
+            {
+                startDateString = sched.StartDate.ToString("yyyy-MM-dd");
+                weekDays = new HashSet<DayOfWeek>(sched.WeekDays ?? new List<DayOfWeek>());
+            }
+        }
+    }
+
+    private void ToggleDay(DayOfWeek dow, ChangeEventArgs e)
+    {
+        if (weekDays.Contains(dow)) weekDays.Remove(dow);
+        else weekDays.Add(dow);
+    }
+
+    private void OnStartDateChanged(ChangeEventArgs e)
+    {
+        startDateString = e?.Value?.ToString() ?? startDateString;
+    }
+
+    private async Task Save()
+    {
+        if (Medicine == null) return;
+        if (!DateOnly.TryParse(startDateString, out var start)) start = DateOnly.FromDateTime(DateTime.Today);
+
+        var s = new Schedule
+        {
+            MedicineId = Medicine.Id,
+            StartDate = start,
+            WeekDays = weekDays.ToList()
+        };
+
+        await OnScheduleSaved.InvokeAsync(s);
+    }
+}

@@ -1,0 +1,67 @@
+@using RecipieApp.Shared.Domains.MedApp
+@inject IJSRuntime JS
+
+<div id="@ElementId"></div>
+
+@code {
+    [Parameter] public List<ScheduledDose>? Events { get; set; }
+    [Parameter] public EventCallback<ScheduledDose> OnEventClick { get; set; }
+
+    private DotNetObjectReference<FullCalendarWrapper>? objRef;
+    private string ElementId = "medapp_fullcalendar_" + Guid.NewGuid().ToString("N");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            objRef = DotNetObjectReference.Create(this);
+            await InitializeCalendarAsync();
+        }
+        else
+        {
+            await UpdateEventsAsync();
+        }
+    }
+
+    private async Task InitializeCalendarAsync()
+    {
+        var events = MapEvents();
+        await JS.InvokeVoidAsync("medappFullCalendar.init", ElementId, events, objRef);
+    }
+
+    private async Task UpdateEventsAsync()
+    {
+        var events = MapEvents();
+        await JS.InvokeVoidAsync("medappFullCalendar.updateEvents", events);
+    }
+
+    private object[] MapEvents()
+    {
+        if (Events == null) return Array.Empty<object>();
+        return Events.Select(e => new
+        {
+            id = e.MedicineId + "_" + e.Date.ToString(),
+            title = e.MedicineName + (string.IsNullOrEmpty(e.InjectionSiteName) ? "" : " – " + e.InjectionSiteName),
+            start = e.Date.ToString(),
+            allDay = true
+        }).ToArray();
+    }
+
+    [JSInvokable]
+    public async Task NotifyEventClicked(string id)
+    {
+        // id format: medicineId_date
+        var parts = id.Split('_');
+        if (parts.Length < 2) return;
+        if (!Guid.TryParse(parts[0], out var medId)) return;
+        if (!DateOnly.TryParse(parts[1], out var d)) return;
+
+        var ev = Events?.FirstOrDefault(x => x.MedicineId == medId && x.Date == d);
+        if (ev != null) await OnEventClick.InvokeAsync(ev);
+    }
+
+    public void Dispose()
+    {
+        objRef?.Dispose();
+    }
+}

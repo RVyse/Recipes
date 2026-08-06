@@ -1,0 +1,49 @@
+@page "/medical/stats"
+@using RecipieApp.Shared.Domains.MedApp
+@inject MedAppStateService State
+
+<h3>Statistics</h3>
+
+@code {
+    private int taken;
+    private int missed;
+    private int pending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await State.InitializeAsync();
+        var from = DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+        var to = DateOnly.FromDateTime(DateTime.Today);
+        var s = State.GetStatistics(from, to);
+        taken = s.Taken;
+        missed = s.Missed;
+        pending = s.Pending;
+    }
+}
+
+<div class="row">
+    <div class="col-12 col-md-4">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Taken (last 30d)</h5>
+                <div class="display-6">@taken</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Missed (last 30d)</h5>
+                <div class="display-6 text-warning">@missed</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Pending (next 30d)</h5>
+                <div class="display-6 text-muted">@pending</div>
+            </div>
+        </div>
+    </div>
+</div>

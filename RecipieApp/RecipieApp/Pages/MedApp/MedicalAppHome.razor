@@ -1,0 +1,615 @@
+@page "/medical/home"
+@using RecipieApp.Pages.MedApp.Components
+@using RecipieApp.Shared.Domains.MedApp
+@inject MedAppStateService State
+@inject IJSRuntime JS
+
+@implements IDisposable
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="mb-0">Medical Dashboard</h2>
+            <div class="text-muted">Manage medicines, schedules and injection sites</div>
+        </div>
+
+        <div class="d-flex align-items-center">
+            <div class="me-2 text-end d-none d-md-block">
+                <small class="text-muted">Status: <b>@(State.Medicines.Any() ? "Configured" : "No medicines")</b></small>
+            </div>
+            <button class="btn btn-outline-secondary" title="Manage app settings" data-bs-toggle="modal" data-bs-target="#medappSettingsModal">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-gear" viewBox="0 0 16 16">
+                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.433 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.433-.901 2.54-2.54l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.901-3.433-2.54-2.541l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    @* Top toolbar (full width) *@
+    <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                <button type="button" class="btn btn-primary me-2" @onclick="OpenManageMedicines">Manage Medicines</button>
+
+                <div class="btn-group me-2">
+                    <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Medicine Editor</button>
+                    <ul class="dropdown-menu">
+                        @foreach (var m in State.Medicines)
+                        {
+                            <li><button type="button" class="dropdown-item" @onclick="(() => OpenMedicineEditor(m))">@m.Name</button></li>
+                        }
+                        @if (!State.Medicines.Any()) { <li class="dropdown-item text-muted">No medicines</li> }
+                    </ul>
+                </div>
+
+            </div>
+
+            <div>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button class="btn btn-outline-secondary @(viewMode==ViewMode.Month?"active":"")" @onclick="() => { viewMode = ViewMode.Month; }">Month</button>
+                    <button class="btn btn-outline-secondary @(viewMode==ViewMode.List?"active":"")" @onclick="() => { viewMode = ViewMode.List; }">List</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Manage medicines modal: left list, right editor *@
+    <div class="modal fade" id="manageMedicinesModal" tabindex="-1" aria-labelledby="manageMedicinesLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manageMedicinesLabel">Manage Medicines</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-4">
+                            <div class="d-flex mb-2">
+                                <input class="form-control me-2" placeholder="New medicine name" @bind="newMedicineName" />
+                                <button class="btn btn-primary" @onclick="AddAndSelectNew">Add</button>
+                            </div>
+                            <ul class="list-group">
+                                @foreach (var m in State.Medicines)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center @(selected!=null && selected.Id==m.Id?"active":"")" @onclick="(()=>SelectMedicine(m))" style="cursor:pointer;">
+                                        <div>
+                                            <div class="fw-semibold">@m.Name</div>
+                                            @if (m.IsInjection) { <div class="small text-muted">Injection</div> }
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                        <div class="col-8">
+                            @if (selected == null)
+                            {
+                                <div class="text-muted">Select a medicine to edit its details, injection sites and schedules.</div>
+                            }
+                                else
+                            {
+                                <div>
+                                    <div class="mb-2">
+                                        <label class="form-label">Name</label>
+                                        <input class="form-control" @bind="selected.Name" />
+                                    </div>
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" id="sel_isInjection" @bind="selected.IsInjection" />
+                                        <label class="form-check-label" for="sel_isInjection">Is Injection</label>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <InjectionSiteEditor Medicine="selected" OnChanged="OnMedicineChanged" />
+                                    </div>
+                                    <div class="mb-3">
+                                        <ScheduleEditor @ref="scheduleEditorRef" Medicine="selected" OnScheduleSaved="OnScheduleSaved" />
+                                    </div>
+                                    <div class="d-flex justify-content-between mt-3">
+                                        <div></div>
+                                        <div>
+                                            <button type="button" class="btn btn-danger me-2" @onclick="DeleteSelected">Delete</button>
+                                            <button type="button" class="btn btn-primary" @onclick="SaveMedicineAndClose">Save</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveMedicineAndClose">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Calendar area: full width card *@
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            @if (!State.Medicines.Any())
+            {
+                <div class="p-5 text-center text-muted">
+                    <h5>No medicines yet</h5>
+                    <p>Add a medicine to start scheduling doses and see them on the calendar.</p>
+                </div>
+            }
+            else
+            {
+                <div class="p-3">
+                    @if (viewMode == ViewMode.List)
+                    {
+                        <div>
+                            @foreach (var dose in upcoming)
+                            {
+                                var cardClass = dose.Status == DoseStatus.Taken ? "card-taken" : dose.Status == DoseStatus.Missed ? "card-missed" : string.Empty;
+                                <div class="card mb-2 @(cardClass)">
+                                    <div class="card-body d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <div class="d-flex align-items-center mb-1">
+                                                <span class="badge bg-secondary me-2">@dose.Date.DayOfWeek</span>
+                                                <div class="fw-semibold">@FormatDoseDate(dose.Date) — @dose.MedicineName</div>
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(dose.InjectionSiteName)) { <div class="small text-muted">@dose.InjectionSiteName</div> }
+                                            <div class="small text-muted">Status: @dose.Status</div>
+                                        </div>
+                                        <div>
+                                            @if (dose.Date <= DateOnly.FromDateTime(DateTime.Today))
+                                            {
+                                                <button class="btn btn-success btn-sm me-1" @onclick="() => OpenConfirm(dose)">Taken</button>
+                                                <button class="btn btn-warning btn-sm" @onclick="() => OpenConfirm(dose)">Missed</button>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="p-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex align-items-center">
+                                    <button class="btn btn-sm btn-outline-secondary me-2" @onclick="PrevMonth">&larr;</button>
+                                    <div class="fw-semibold">@currentMonth.ToString("Y")</div>
+                                    <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="NextMonth">&rarr;</button>
+                                </div>
+                                <div>
+                                    <small class="text-muted">Showing month view</small>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-bordered mb-0 medapp-calendar-table">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th class="text-center">Mon</th>
+                                            <th class="text-center">Tue</th>
+                                            <th class="text-center">Wed</th>
+                                            <th class="text-center">Thu</th>
+                                            <th class="text-center">Fri</th>
+                                            <th class="text-center">Sat</th>
+                                            <th class="text-center">Sun</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var week in GetMonthGrid(currentMonth))
+                                        {
+                                            <tr>
+                                                @foreach (var day in week)
+                                                {
+                                                    var isCurrent = day.Month == currentMonth.Month;
+                                                    <td>
+                                                        <div class="cell-inner">
+                                                            <div class="d-flex justify-content-between mb-1">
+                                                                <div class="small @(isCurrent?"":"text-muted")">@day.Day</div>
+                                                            </div>
+                                                            <div class="flex-fill">
+                                                                @if (monthMap.TryGetValue(day, out var doses))
+                                                                {
+                                                                    foreach (var d in doses.Take(4))
+                                                                    {
+                                                                        var statusClass = d.Status == DoseStatus.Taken ? "taken" : d.Status == DoseStatus.Missed ? "missed" : string.Empty;
+                                                                        <div class="medapp-event-card @(d.InjectionSiteName!=null?"injection":"") @(statusClass)" title="@d.MedicineName" style="cursor:@(d.Date <= DateOnly.FromDateTime(DateTime.Today) ? "pointer" : "default")" @onclick="(() => TryOpenConfirm(d))">
+                                                                            <div class="title">@d.MedicineName</div>
+                                                                            @if (!string.IsNullOrEmpty(d.InjectionSiteName))
+                                                                            {
+                                                                                <div class="meta">Injection • @d.InjectionSiteName</div>
+                                                                            }
+                                                                            @if (string.IsNullOrEmpty(d.InjectionSiteName))
+                                                                            {
+                                                                                <div class="meta">@((d.Status==DoseStatus.Pending)?"Pending":d.Status.ToString())</div>
+                                                                            }
+                                                                        </div>
+                                                                    }
+                                                                    if (doses.Count > 4)
+                                                                    {
+                                                                        <div class="small text-muted mt-1">+@((doses.Count)-4) more</div>
+                                                                    }
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @* Settings modal simplified: only Retention & Generate settings *@
+    <div class="modal fade" id="medappSettingsModal" tabindex="-1" aria-labelledby="medappSettingsLabel" aria-hidden="true">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="medappSettingsLabel">Settings</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Configure retention and generation settings.</p>
+                    <div class="mb-2">
+                        <label class="form-label">Retention days</label>
+                        <input class="form-control" type="number" @bind="retentionDays" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Generate days</label>
+                        <input class="form-control" type="number" @bind="generateDays" />
+                    </div>
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-danger me-2" @onclick="ResetAllData">Reset All Data</button>
+                        <small class="text-muted">This clears all medicines, schedules and recorded doses from browser storage.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" @onclick="ApplyRetentionSettings">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Confirm modal component reference *@
+    <ConfirmDoseModal @ref="confirmModal" OnTaken="HandleTaken" OnMissed="HandleMissed" />
+</div>
+
+@code {
+    private string newMedicineName = string.Empty;
+    private bool newIsInjection;
+    private Medicine? selected;
+    private List<ScheduledDose> upcoming = new();
+    private ViewMode viewMode = ViewMode.List;
+    private List<DateOnly> monthDays = new();
+    private object? confirmModal;
+    private int statsTaken = 0;
+    private int statsMissed = 0;
+    private int statsPending = 0;
+
+    // calendar state
+    private DateOnly currentMonth = DateOnly.FromDateTime(DateTime.Today);
+    private Dictionary<DateOnly, List<ScheduledDose>> monthMap = new();
+    private int retentionDays = 365;
+    private int generateDays = 30;
+    private bool isNewMedicine = false;
+    private RecipieApp.Pages.MedApp.Components.ScheduleEditor? scheduleEditorRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await State.InitializeAsync();
+        RefreshUpcoming();
+        BuildMonthDays(DateOnly.FromDateTime(DateTime.Today));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var width = await JS.InvokeAsync<int>("medappFullCalendar.getWindowWidth");
+                if (width < 768) viewMode = ViewMode.List;
+                else viewMode = ViewMode.Month;
+                StateHasChanged();
+                try { await JS.InvokeVoidAsync("medappFullCalendar.moveModalToBody", "medappSettingsModal"); } catch { }
+                try { await JS.InvokeVoidAsync("medappFullCalendar.moveModalToBody", "manageMedicinesModal"); } catch { }
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void SelectMedicine(Medicine m)
+    {
+        selected = m;
+    }
+
+    private Task NewMedicineAndOpenEditor() => OpenManageMedicines();
+
+    private async Task OnMedicineChanged(Medicine m)
+    {
+        await State.UpdateMedicineAsync(m);
+        RefreshUpcoming();
+    }
+
+    private async Task OnScheduleSaved(Schedule s)
+    {
+        await State.AddScheduleAsync(s);
+        RefreshUpcoming();
+    }
+
+    private Task OnCalendarEventClick(ScheduledDose dose)
+    {
+        OpenConfirm(dose);
+        return Task.CompletedTask;
+    }
+
+    private void OpenConfirm(ScheduledDose dose)
+    {
+        if (confirmModal != null) ((dynamic)confirmModal).Show(dose);
+    }
+
+    private async Task HandleTaken(ScheduledDose dose)
+    {
+        await MarkTaken(dose);
+    }
+
+    private async Task HandleMissed(ScheduledDose dose)
+    {
+        await MarkMissed(dose);
+    }
+
+    private async Task AddMedicine()
+    {
+        if (string.IsNullOrWhiteSpace(newMedicineName)) return;
+        var med = new Medicine { Name = newMedicineName.Trim(), IsInjection = newIsInjection };
+        await State.AddMedicineAsync(med);
+        newMedicineName = string.Empty;
+        newIsInjection = false;
+        RefreshUpcoming();
+        StateHasChanged();
+    }
+
+    private async Task AddAndSelectNew()
+    {
+        if (string.IsNullOrWhiteSpace(newMedicineName)) return;
+        var med = new Medicine { Name = newMedicineName.Trim(), IsInjection = false };
+        await State.AddMedicineAsync(med);
+        selected = med;
+        newMedicineName = string.Empty;
+        isNewMedicine = true;
+        // ensure list reflects new item
+        await State.InitializeAsync();
+        StateHasChanged();
+    }
+
+    private async Task DeleteMedicine(Medicine m)
+    {
+        if (m == null) return;
+        // remove from state
+        await State.RemoveMedicineAsync(m.Id);
+        // clear selection if deleted
+        if (selected != null && selected.Id == m.Id) selected = null;
+        await State.InitializeAsync();
+        RefreshUpcoming();
+        RefreshMonthMap();
+        StateHasChanged();
+    }
+
+    private async Task DeleteSelected()
+    {
+        if (selected == null) return;
+        var ok = await JS.InvokeAsync<bool>("confirm", $"Delete medicine '{selected.Name}'? This removes schedules and records.");
+        if (!ok) return;
+        await State.RemoveMedicineAsync(selected.Id);
+        selected = null;
+        await State.InitializeAsync();
+        RefreshUpcoming();
+        RefreshMonthMap();
+        try { await JS.InvokeVoidAsync("medappFullCalendar.hideModal", "manageMedicinesModal"); } catch { }
+        StateHasChanged();
+    }
+
+    private void RefreshUpcoming()
+    {
+        var from = DateOnly.FromDateTime(DateTime.Today);
+        var to = from.AddDays(30);
+        upcoming = State.GetUpcomingDoses(from, to).ToList();
+
+        var sFrom = DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+        var sTo = DateOnly.FromDateTime(DateTime.Today);
+        var stats = State.GetStatistics(sFrom, sTo);
+        statsTaken = stats.Taken;
+        statsMissed = stats.Missed;
+        statsPending = stats.Pending;
+    }
+
+    private async Task MarkTaken(ScheduledDose dose)
+    {
+        await State.MarkDoseTakenAsync(dose.MedicineId, dose.Date);
+        await State.InitializeAsync();
+        RefreshUpcoming();
+    }
+
+    private async Task MarkMissed(ScheduledDose dose)
+    {
+        await State.MarkDoseMissedAsync(dose.MedicineId, dose.Date);
+        // regenerate forward sequences after a missed dose
+        await State.GenerateForwardForAllAsync();
+        await State.InitializeAsync();
+        RefreshUpcoming();
+    }
+
+    private void TryOpenConfirm(ScheduledDose dose)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (dose.Date <= today)
+        {
+            OpenConfirm(dose);
+        }
+        else
+        {
+            // no-op for future dates; you could show a toast if desired
+        }
+    }
+
+    private void BuildMonthDays(DateOnly month)
+    {
+        monthDays.Clear();
+        currentMonth = new DateOnly(month.Year, month.Month, 1);
+        var days = DateTime.DaysInMonth(month.Year, month.Month);
+        for (int i = 1; i <= days; i++) monthDays.Add(new DateOnly(month.Year, month.Month, i));
+        RefreshMonthMap();
+    }
+
+    private void PrevMonth()
+    {
+        currentMonth = currentMonth.AddMonths(-1);
+        BuildMonthDays(currentMonth);
+    }
+
+    private void NextMonth()
+    {
+        currentMonth = currentMonth.AddMonths(1);
+        BuildMonthDays(currentMonth);
+    }
+
+    private void RefreshMonthMap()
+    {
+        monthMap.Clear();
+        var first = new DateOnly(currentMonth.Year, currentMonth.Month, 1);
+        int dayIndex = ((int)first.DayOfWeek + 6) % 7;
+        var start = first.AddDays(-dayIndex);
+        var end = start.AddDays(6 * 7 - 1);
+
+        var doses = State.GetUpcomingDoses(start, end);
+        foreach (var d in doses)
+        {
+            if (!monthMap.TryGetValue(d.Date, out var list))
+            {
+                list = new List<ScheduledDose>();
+                monthMap[d.Date] = list;
+            }
+            list.Add(d);
+        }
+    }
+
+    private IEnumerable<List<DateOnly>> GetMonthGrid(DateOnly month)
+    {
+        var first = new DateOnly(month.Year, month.Month, 1);
+        int dayIndex = ((int)first.DayOfWeek + 6) % 7;
+        var start = first.AddDays(-dayIndex);
+        var weeks = new List<List<DateOnly>>();
+        for (int w = 0; w < 6; w++)
+        {
+            var week = new List<DateOnly>();
+            for (int d = 0; d < 7; d++)
+            {
+                week.Add(start.AddDays(w * 7 + d));
+            }
+            weeks.Add(week);
+        }
+        return weeks;
+    }
+
+    private async Task ApplyRetentionSettings()
+    {
+        await State.SetRetentionDaysAsync(retentionDays);
+        await State.SetGenerateDaysAsync(generateDays);
+        // generate forward and persist
+        await State.GenerateForwardForAllAsync();
+        await State.InitializeAsync();
+        RefreshUpcoming();
+        RefreshMonthMap();
+        // hide settings modal after saving
+        try { await JS.InvokeVoidAsync("medappFullCalendar.hideModal", "medappSettingsModal"); } catch { }
+    }
+
+    private async Task ResetAllData()
+    {
+        // clear state and storage
+        await State.ResetAsync();
+        await State.InitializeAsync();
+        RefreshUpcoming();
+        RefreshMonthMap();
+        try { await JS.InvokeVoidAsync("medappFullCalendar.hideModal", "medappSettingsModal"); } catch { }
+        StateHasChanged();
+    }
+
+    private async Task OpenMedicineEditor(Medicine m)
+    {
+        selected = m;
+        isNewMedicine = false;
+        // open manage modal and ensure selected is focused
+        await JS.InvokeVoidAsync("medappFullCalendar.showModal", "manageMedicinesModal");
+    }
+
+    private async Task SaveMedicineAndClose()
+    {
+        if (selected != null)
+        {
+            if (string.IsNullOrWhiteSpace(selected.Name))
+            {
+                await JS.InvokeVoidAsync("alert", "Medicine name is required.");
+                return;
+            }
+
+            if (isNewMedicine)
+            {
+                await State.AddMedicineAsync(selected);
+            }
+            else
+            {
+                await State.UpdateMedicineAsync(selected);
+            }
+            // save schedule from child editor if present
+            try
+            {
+                var s = scheduleEditorRef?.BuildSchedule();
+                if (s != null)
+                {
+                    // remove existing schedules for this medicine
+                    var existing = State.GetSchedulesForMedicine(selected.Id).ToList();
+                    foreach (var ex in existing) await State.RemoveScheduleAsync(ex.Id);
+                    await State.AddScheduleAsync(s);
+                }
+            }
+            catch { }
+
+            await State.InitializeAsync();
+            RefreshUpcoming();
+            RefreshMonthMap();
+        }
+        isNewMedicine = false;
+        try { await JS.InvokeVoidAsync("medappFullCalendar.hideModal", "manageMedicinesModal"); } catch { }
+        StateHasChanged();
+    }
+
+    private async Task OpenManageMedicines()
+    {
+        // open modal that lists medicines and allows add/edit
+        await JS.InvokeVoidAsync("medappFullCalendar.showModal", "manageMedicinesModal");
+    }
+
+    public void Dispose()
+    {
+    }
+
+    private string FormatDoseDate(DateOnly date)
+    {
+        var day = date.Day;
+        string suffix = "th";
+        if (day % 10 == 1 && day % 100 != 11) suffix = "st";
+        else if (day % 10 == 2 && day % 100 != 12) suffix = "nd";
+        else if (day % 10 == 3 && day % 100 != 13) suffix = "rd";
+        return $"{day}{suffix} {date:MMMM yyyy}";
+    }
+
+    private enum ViewMode { List, Month }
+}
+

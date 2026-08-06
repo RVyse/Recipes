@@ -1,0 +1,103 @@
+@using RecipieApp.Shared.Domains.MedApp
+
+@* Parameters *@
+@code {
+    [Parameter] public Medicine? Medicine { get; set; }
+    [Parameter] public EventCallback<Medicine> OnChanged { get; set; }
+}
+
+@if (Medicine == null)
+{
+    <div class="alert alert-secondary">Select a medicine to manage injection sites.</div>
+}
+else
+{
+    <div>
+        <h5>Injection Sites for @Medicine.Name</h5>
+        <ul class="list-group mb-2">
+        @for (int i = 0; i < Medicine.InjectionSites.Count; i++)
+        {
+            var site = Medicine.InjectionSites[i];
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <input class="form-control" value="@site.Name" @onchange="(e) => UpdateName(site.Id, ((ChangeEventArgs)e).Value?.ToString() ?? string.Empty)" />
+                    <div class="small text-muted">Sequence: @site.Sequence</div>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="() => MoveUp(site.Id)" disabled="@(i==0)">▲</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="() => MoveDown(site.Id)" disabled="@(i==Medicine.InjectionSites.Count-1)">▼</button>
+                    <button type="button" class="btn btn-sm btn-danger" @onclick="() => Remove(site.Id)">Remove</button>
+                </div>
+            </li>
+        }
+        </ul>
+
+        <div class="input-group">
+            <input class="form-control" placeholder="New site name" @bind="newSiteName" />
+            <button type="button" class="btn btn-primary" @onclick="Add">Add</button>
+        </div>
+    </div>
+}
+
+@code {
+    private string newSiteName = string.Empty;
+
+    private void UpdateName(Guid siteId, string name)
+    {
+        if (Medicine == null) return;
+        var idx = Medicine.InjectionSites.FindIndex(s => s.Id == siteId);
+        if (idx < 0) return;
+        Medicine.InjectionSites[idx].Name = name;
+        _ = NotifyChanged();
+    }
+
+    private void Add()
+    {
+        if (Medicine == null || string.IsNullOrWhiteSpace(newSiteName)) return;
+        var seq = Medicine.InjectionSites.Count + 1;
+        Medicine.InjectionSites.Add(new InjectionSite { Name = newSiteName.Trim(), Sequence = seq });
+        newSiteName = string.Empty;
+        _ = NotifyChanged();
+    }
+
+    private void Remove(Guid siteId)
+    {
+        if (Medicine == null) return;
+        var idx = Medicine.InjectionSites.FindIndex(s => s.Id == siteId);
+        if (idx < 0) return;
+        Medicine.InjectionSites.RemoveAt(idx);
+        // re-sequence
+        for (int i = 0; i < Medicine.InjectionSites.Count; i++) Medicine.InjectionSites[i].Sequence = i + 1;
+        _ = NotifyChanged();
+    }
+
+    private void MoveUp(Guid siteId)
+    {
+        if (Medicine == null) return;
+        var idx = Medicine.InjectionSites.FindIndex(s => s.Id == siteId);
+        if (idx <= 0) return;
+        var tmp = Medicine.InjectionSites[idx - 1];
+        Medicine.InjectionSites[idx - 1] = Medicine.InjectionSites[idx];
+        Medicine.InjectionSites[idx] = tmp;
+        for (int i = 0; i < Medicine.InjectionSites.Count; i++) Medicine.InjectionSites[i].Sequence = i + 1;
+        _ = NotifyChanged();
+    }
+
+    private void MoveDown(Guid siteId)
+    {
+        if (Medicine == null) return;
+        var idx = Medicine.InjectionSites.FindIndex(s => s.Id == siteId);
+        if (idx < 0 || idx >= Medicine.InjectionSites.Count - 1) return;
+        var tmp = Medicine.InjectionSites[idx + 1];
+        Medicine.InjectionSites[idx + 1] = Medicine.InjectionSites[idx];
+        Medicine.InjectionSites[idx] = tmp;
+        for (int i = 0; i < Medicine.InjectionSites.Count; i++) Medicine.InjectionSites[i].Sequence = i + 1;
+        _ = NotifyChanged();
+    }
+
+    private Task NotifyChanged()
+    {
+        if (Medicine == null) return Task.CompletedTask;
+        return OnChanged.InvokeAsync(Medicine);
+    }
+}

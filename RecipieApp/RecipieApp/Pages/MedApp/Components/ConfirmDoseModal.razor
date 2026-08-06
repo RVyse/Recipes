@@ -1,0 +1,58 @@
+@using RecipieApp.Shared.Domains.MedApp
+
+@if (IsVisible && Dose != null)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal d-block" tabindex="-1" style="display:block; background: rgba(0,0,0,0.0);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm dose</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="Hide"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1"><strong>@Dose.Date.ToString()</strong> — @Dose.MedicineName</p>
+                    @if (!string.IsNullOrEmpty(Dose.InjectionSiteName)) { <p class="mb-1">Site: @Dose.InjectionSiteName</p> }
+                    <p class="text-muted">Choose an action for this scheduled dose.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => ConfirmMissed()">Missed</button>
+                    <button class="btn btn-primary" @onclick="() => ConfirmTaken()">Taken</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public ScheduledDose? Dose { get; set; }
+    [Parameter] public EventCallback<ScheduledDose> OnTaken { get; set; }
+    [Parameter] public EventCallback<ScheduledDose> OnMissed { get; set; }
+
+    private bool IsVisible { get; set; }
+
+    public void Show(ScheduledDose dose)
+    {
+        Dose = dose;
+        IsVisible = true;
+        StateHasChanged();
+    }
+
+    public void Hide()
+    {
+        IsVisible = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmTaken()
+    {
+        if (Dose != null) await OnTaken.InvokeAsync(Dose);
+        Hide();
+    }
+
+    private async Task ConfirmMissed()
+    {
+        if (Dose != null) await OnMissed.InvokeAsync(Dose);
+        Hide();
+    }
+}
